@@ -6,6 +6,8 @@ const path = require('path');
 const { BASE_PATH } = require('../paths');
 const { installArchive } = require('./archive');
 const { log: defaultLog, cache } = require('../utils');
+const HttpsProxyAgent  = require('https-proxy-agent'); //agent: new HttpsProxyAgent('http://127.0.0.1:53128') }
+//const https = require("https");
 
 /**
  * @param {Object} options
@@ -46,8 +48,21 @@ function downloadFile(url, dest, log) {
   mkdirp.sync(path.dirname(dest));
 
   log.info('downloading from %s', chalk.bold(url));
+  
+  /*const _agent = new https.Agent({
+	  hostname: '127.0.0.1',
+		port: 53128,
+		rejectUnauthorized: false
+	});*/
+	
+	const _agent = new HttpsProxyAgent({
+	  host: '127.0.0.1',
+		port: 53128,
+		secureProxy : false,
+		rejectUnauthorized : false
+	});
 
-  return fetch(url, { headers: { 'If-None-Match': cacheMeta.etag } }).then(
+  return fetch(url, { headers: { 'If-None-Match': cacheMeta.etag }, agent: _agent }).then(
     res =>
       new Promise((resolve, reject) => {
         if (res.status === 304) {
