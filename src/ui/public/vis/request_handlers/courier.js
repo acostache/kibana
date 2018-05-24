@@ -1,6 +1,7 @@
 import _ from 'lodash';
 import { SearchSourceProvider } from '../../courier/data_source/search_source';
 import { VisRequestHandlersRegistryProvider } from '../../registry/vis_request_handlers';
+import { calculateObjectHash } from '../lib/calculate_object_hash';
 
 const CourierRequestHandlerProvider = function (Private, courier, timefilter) {
   const SearchSource = Private(SearchSourceProvider);
@@ -8,37 +9,18 @@ const CourierRequestHandlerProvider = function (Private, courier, timefilter) {
   /**
    * TODO: This code can be removed as soon as we got rid of inheritance in the
    * searchsource and pass down every filter explicitly.
-   * we're only adding one range filter against the timeFieldName to ensure
-   * that our filter is the only one applied and override the global filters.
-   * this does rely on the "implementation detail" that filters are added first
-   * on the leaf SearchSource and subsequently on the parents.
+   * We are filtering out the global timefilter by the meta key set by the root
+   * search source on that filter.
    */
   function removeSearchSourceParentTimefilter(searchSource) {
-    searchSource.addFilterPredicate((filter, state) => {
-      if (!filter.range) {
-        return true;
-      }
-
-      const index = searchSource.index() || searchSource.getParent().index();
-      const timeFieldName = index && index.timeFieldName;
-      if (!index || !timeFieldName) {
-        return true;
-      }
-
-      // Only check if we need to filter out this filter if it's actual a range filter
-      // on our time field and not any other field.
-      if (!filter.range[timeFieldName]) {
-        return true;
-      }
-
-      return !(state.filters || []).find(f => f.range && f.range[timeFieldName]);
+    searchSource.addFilterPredicate((filter) => {
+      return !_.get(filter, 'meta._globalTimefilter', false);
     });
-
   }
 
   return {
     name: 'courier',
-    handler: function (vis, { appState, queryFilter, searchSource, timeRange }) {
+    handler: function (vis, { appState, queryFilter, searchSource, timeRange, forceFetch }) {
 
       // Create a new search source that inherits the original search source
       // but has the propriate timeRange applied via a filter.
@@ -60,6 +42,14 @@ const CourierRequestHandlerProvider = function (Private, courier, timefilter) {
         }
       });
 
+      requestSearchSource.aggs(function () {
+        return vis.getAggConfig().toDsl();
+      });
+
+      requestSearchSource.onRequestStart((searchSource, searchRequest) => {
+        return vis.onSearchRequestStart(searchSource, searchRequest);
+      });
+
       // Add the explicit passed timeRange as a filter to the requestSearchSource.
       requestSearchSource.filter(() => {
         return timefilter.get(searchSource.index(), timeRange);
@@ -72,22 +62,11 @@ const CourierRequestHandlerProvider = function (Private, courier, timefilter) {
         searchSource.set('query', appState.query);
       }
 
-      // AggConfig contains circular reference to vis, which contains visualization parameters,
-      // which we should not look at
-      const copyAggs = (aggs) => {
-        return aggs.map(agg => {
-          return {
-            type: agg.type,
-            params: agg.params
-          };
-        });
-      };
-
       const shouldQuery = () => {
-        if (!searchSource.lastQuery || vis.reload) return true;
+        if (!searchSource.lastQuery || forceFetch) return true;
         if (!_.isEqual(_.cloneDeep(searchSource.get('filter')), searchSource.lastQuery.filter)) return true;
         if (!_.isEqual(_.cloneDeep(searchSource.get('query')), searchSource.lastQuery.query)) return true;
-        if (!_.isEqual(_.cloneDeep(copyAggs(vis.aggs)), searchSource.lastQuery.aggs)) return true;
+        if (!_.isEqual(calculateObjectHash(vis.getAggConfig()), searchSource.lastQuery.aggs)) return true;
         if (!_.isEqual(_.cloneDeep(timeRange), searchSource.lastQuery.timeRange)) return true;
 
         return false;
@@ -95,12 +74,11 @@ const CourierRequestHandlerProvider = function (Private, courier, timefilter) {
 
       return new Promise((resolve, reject) => {
         if (shouldQuery()) {
-          delete vis.reload;
           requestSearchSource.onResults().then(resp => {
             searchSource.lastQuery = {
               filter: _.cloneDeep(searchSource.get('filter')),
               query: _.cloneDeep(searchSource.get('query')),
-              aggs: _.cloneDeep(copyAggs(vis.aggs)),
+              aggs: calculateObjectHash(vis.getAggConfig()),
               timeRange: _.cloneDeep(timeRange)
             };
 
@@ -109,8 +87,10 @@ const CourierRequestHandlerProvider = function (Private, courier, timefilter) {
             return _.cloneDeep(resp);
           }).then(async resp => {
             for (const agg of vis.getAggConfig()) {
-              const nestedSearchSource = new SearchSource().inherits(requestSearchSource);
-              resp = await agg.type.postFlightRequest(resp, vis.aggs, agg, nestedSearchSource);
+              if (_.has(agg, 'type.postFlightRequest')) {
+                const nestedSearchSource = new SearchSource().inherits(requestSearchSource);
+                resp = await agg.type.postFlightRequest(resp, vis.aggs, agg, nestedSearchSource);
+              }
             }
 
             searchSource.finalResponse = resp;
@@ -119,7 +99,7 @@ const CourierRequestHandlerProvider = function (Private, courier, timefilter) {
 
           courier.fetch();
         } else {
-          resolve(_.cloneDeep(searchSource.finalResponse));
+          resolve(searchSource.finalResponse);
         }
       });
     }

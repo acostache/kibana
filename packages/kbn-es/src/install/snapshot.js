@@ -10,27 +10,40 @@ const HttpsProxyAgent  = require('https-proxy-agent'); //agent: new HttpsProxyAg
 //const https = require("https");
 
 /**
+ * Installs ES from snapshot
+ *
  * @param {Object} options
+ * @property {('oss'|'basic'|'trial')} options.license
+ * @property {String} options.password
  * @property {String} options.version
  * @property {String} options.basePath
  * @property {String} options.installPath
  * @property {ToolingLog} options.log
  */
 exports.installSnapshot = async function installSnapshot({
+  license = 'basic',
+  password = 'password',
   version,
   basePath = BASE_PATH,
   installPath = path.resolve(basePath, version),
   log = defaultLog,
 }) {
-  const fileName = `elasticsearch-${version}-SNAPSHOT.tar.gz`;
+  const fileName = getFilename(license, version);
   const url = `https://snapshots.elastic.co/downloads/elasticsearch/${fileName}`;
   const dest = path.resolve(basePath, 'cache', fileName);
 
   log.info('version: %s', chalk.bold(version));
   log.info('install path: %s', chalk.bold(installPath));
+  log.info('license: %s', chalk.bold(license));
 
   await downloadFile(url, dest, log);
-  return await installArchive(dest, { installPath, basePath, log });
+  return await installArchive(dest, {
+    license,
+    password,
+    basePath,
+    installPath,
+    log,
+  });
 };
 
 /**
@@ -96,4 +109,12 @@ function downloadFile(url, dest, log) {
           });
       })
   );
+}
+
+function getFilename(license, version) {
+  const basename = `elasticsearch${
+    license === 'oss' ? '-oss-' : '-'
+  }${version}`;
+
+  return `${basename}-SNAPSHOT.tar.gz`;
 }

@@ -1,6 +1,6 @@
 const join = require('path').join;
 const relative = require('path').relative;
-const unlinkSync = require('fs').unlinkSync;
+const { readFileSync, writeFileSync, unlinkSync, existsSync } = require('fs');
 const execFileSync = require('child_process').execFileSync;
 const del = require('del');
 const vfs = require('vinyl-fs');
@@ -29,30 +29,60 @@ function removeSymlinkDependencies(root) {
   });
 }
 
-module.exports = function createBuild(plugin, buildTarget, buildVersion, kibanaVersion, files) {
+// parse a ts config file
+function parseTsconfig(pluginSourcePath, configPath) {
+  const ts = require(join(pluginSourcePath, 'node_modules', 'typescript'));
+
+  const { error, config } = ts.parseConfigFileTextToJson(
+    configPath,
+    readFileSync(configPath, 'utf8')
+  );
+
+  if (error) {
+    throw error;
+  }
+
+  return config;
+}
+
+module.exports = function createBuild(
+  plugin,
+  buildTarget,
+  buildVersion,
+  kibanaVersion,
+  files
+) {
   const buildSource = plugin.root;
   const buildRoot = join(buildTarget, 'kibana', plugin.id);
 
   return del(buildTarget)
-    .then(function () {
-      return new Promise(function (resolve, reject) {
+    .then(function() {
+      return new Promise(function(resolve, reject) {
         vfs
           .src(files, { cwd: buildSource, base: buildSource, allowEmpty: true })
           // modify the package.json file
           .pipe(rewritePackageJson(buildSource, buildVersion, kibanaVersion))
 
           // put all files inside the correct directories
-          .pipe(rename(function nestFileInDir(path) {
-            const nonRelativeDirname = path.dirname.replace(/^(\.\.\/?)+/g, '');
-            path.dirname = join(relative(buildTarget, buildRoot), nonRelativeDirname);
-          }))
+          .pipe(
+            rename(function nestFileInDir(path) {
+              const nonRelativeDirname = path.dirname.replace(
+                /^(\.\.\/?)+/g,
+                ''
+              );
+              path.dirname = join(
+                relative(buildTarget, buildRoot),
+                nonRelativeDirname
+              );
+            })
+          )
 
           .pipe(vfs.dest(buildTarget))
           .on('end', resolve)
           .on('error', reject);
       });
     })
-    .then(function () {
+    .then(function() {
       if (plugin.skipInstallDependencies) {
         return;
       }
@@ -63,13 +93,61 @@ module.exports = function createBuild(plugin, buildTarget, buildVersion, kibanaV
         stdio: ['ignore', 'ignore', 'pipe'],
       };
 
-      execFileSync(winCmd('yarn'), ['install', '--production', '--pure-lockfile'], options);
+      execFileSync(
+        winCmd('yarn'),
+        ['install', '--production', '--pure-lockfile'],
+        options
+      );
     })
-    .then(function () {
+    .then(function() {
+      const buildConfigPath = join(buildRoot, 'tsconfig.json');
+
+      if (!existsSync(buildConfigPath)) {
+        return;
+      }
+
+      if (!plugin.pkg.devDependencies.typescript) {
+        throw new Error(
+          'Found tsconfig.json file in plugin but typescript is not a devDependency.'
+        );
+      }
+
+      // attempt to patch the extends path in the tsconfig file
+      const buildConfig = parseTsconfig(buildSource, buildConfigPath);
+
+      if (buildConfig.extends) {
+        buildConfig.extends = join(
+          relative(buildRoot, buildSource),
+          buildConfig.extends
+        );
+
+        writeFileSync(buildConfigPath, JSON.stringify(buildConfig));
+      }
+
+      execFileSync(
+        join(buildSource, 'node_modules', '.bin', 'tsc'),
+        ['--pretty', 'true'],
+        {
+          cwd: buildRoot,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }
+      );
+
+      del.sync([
+        join(buildRoot, '**', '*.{ts,tsx,d.ts}'),
+        join(buildRoot, 'tsconfig.json'),
+      ]);
+    })
+    .then(function() {
       const buildFiles = [relative(buildTarget, buildRoot) + '/**/*'];
 
       return new Promise((resolve, reject) => {
-        vfs.src(buildFiles, { cwd: buildTarget, base: buildTarget, resolveSymlinks: false })
+        vfs
+          .src(buildFiles, {
+            cwd: buildTarget,
+            base: buildTarget,
+            resolveSymlinks: false,
+          })
           .pipe(removeSymlinkDependencies(buildRoot))
           .on('finish', resolve)
           .on('error', reject);

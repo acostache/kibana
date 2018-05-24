@@ -13,7 +13,7 @@ import { fromRoot } from '../utils';
 import { PUBLIC_PATH_PLACEHOLDER } from './public_path_placeholder';
 
 const POSTCSS_CONFIG_PATH = require.resolve('./postcss.config');
-const BABEL_PRESET_PATH = require.resolve('@kbn/babel-preset/webpack');
+const BABEL_PRESET_PATH = require.resolve('@kbn/babel-preset/webpack_preset');
 const BABEL_EXCLUDE_RE = [
   /[\/\\](webpackShims|node_modules|bower_components)[\/\\]/,
 ];
@@ -102,8 +102,8 @@ export default class BaseOptimizer {
      * files in optimize/.cache that are not necessary for distributable versions
      * of Kibana and just make compressing and extracting it more difficult.
      */
-    function maybeAddCacheLoader(uiBundles, cacheName, loaders) {
-      if (!uiBundles.isDevMode()) {
+    const maybeAddCacheLoader = (cacheName, loaders) => {
+      if (!this.uiBundles.isDevMode()) {
         return loaders;
       }
 
@@ -111,12 +111,30 @@ export default class BaseOptimizer {
         {
           loader: 'cache-loader',
           options: {
-            cacheDirectory: uiBundles.getCacheDirectory(cacheName)
+            cacheDirectory: this.uiBundles.getCacheDirectory(cacheName)
           }
         },
         ...loaders
       ];
-    }
+    };
+
+    /**
+     * Creates the selection rules for a loader that will only pass for
+     * source files that are eligible for automatic transpilation.
+     */
+    const createSourceFileResourceSelector = (test) => {
+      return [
+        {
+          test,
+          exclude: BABEL_EXCLUDE_RE.concat(this.uiBundles.getWebpackNoParseRules()),
+        },
+        {
+          test,
+          include: /[\/\\]node_modules[\/\\]x-pack[\/\\]/,
+          exclude: /[\/\\]node_modules[\/\\]x-pack[\/\\]node_modules[\/\\]/,
+        }
+      ];
+    };
 
     const commonConfig = {
       node: { fs: 'empty' },
@@ -154,6 +172,30 @@ export default class BaseOptimizer {
 
         new webpack.NoEmitOnErrorsPlugin(),
 
+        // replace imports for `uiExports/*` modules with a synthetic module
+        // created by create_ui_exports_module.js
+        new webpack.NormalModuleReplacementPlugin(/^uiExports\//, (resource) => {
+          // the map of uiExport types to module ids
+          const extensions = this.uiBundles.getAppExtensions();
+
+          // everything following the first / in the request is
+          // treated as a type of appExtension
+          const type = resource.request.slice(resource.request.indexOf('/') + 1);
+
+          resource.request = [
+            // the "val-loader" is used to execute create_ui_exports_module
+            // and use its return value as the source for the module in the
+            // bundle. This allows us to bypass writing to the file system
+            require.resolve('val-loader'),
+            '!',
+            require.resolve('./create_ui_exports_module'),
+            '?',
+            // this JSON is parsed by create_ui_exports_module and determines
+            // what require() calls it will execute within the bundle
+            JSON.stringify({ type, modules: extensions[type] || [] })
+          ].join('');
+        }),
+
         ...this.uiBundles.getWebpackPluginProviders()
           .map(provider => provider(webpack)),
       ],
@@ -164,7 +206,7 @@ export default class BaseOptimizer {
             test: /\.less$/,
             use: getStyleLoaders(
               ['less-loader'],
-              maybeAddCacheLoader(this.uiBundles, 'less', [])
+              maybeAddCacheLoader('less', [])
             ),
           },
           {
@@ -189,9 +231,8 @@ export default class BaseOptimizer {
             loader: 'file-loader'
           },
           {
-            test: /\.js$/,
-            exclude: BABEL_EXCLUDE_RE.concat(this.uiBundles.getWebpackNoParseRules()),
-            use: maybeAddCacheLoader(this.uiBundles, 'babel', [
+            resource: createSourceFileResourceSelector(/\.js$/),
+            use: maybeAddCacheLoader('babel', [
               {
                 loader: 'babel-loader',
                 options: {
@@ -228,6 +269,43 @@ export default class BaseOptimizer {
 
     if (this.uiBundles.isDevMode()) {
       return webpackMerge(commonConfig, {
+        module: {
+          rules: [
+            {
+              resource: createSourceFileResourceSelector(/\.tsx?$/),
+              use: maybeAddCacheLoader('typescript', [
+                {
+                  loader: 'ts-loader',
+                  options: {
+                    transpileOnly: true,
+                    experimentalWatchApi: true,
+                    onlyCompileBundledFiles: true,
+                    compilerOptions: {
+                      sourceMap: Boolean(this.sourceMaps),
+                      target: 'es5',
+                      module: 'esnext',
+                    }
+                  }
+                }
+              ]),
+            }
+          ]
+        },
+
+        stats: {
+          // when typescript doesn't do a full type check, as we have the ts-loader
+          // configured here, it does not have enough information to determine
+          // whether an imported name is a type or not, so when the name is then
+          // exported, typescript has no choice but to emit the export. Fortunately,
+          // the extraneous export should not be harmful, so we just suppress these warnings
+          // https://github.com/TypeStrong/ts-loader#transpileonly-boolean-defaultfalse
+          warningsFilter: /export .* was not found in/
+        },
+
+        resolve: {
+          extensions: ['.ts', '.tsx'],
+        },
+
         // In the test env we need to add react-addons (and a few other bits) for the
         // enzyme tests to work.
         // https://github.com/airbnb/enzyme/blob/master/docs/guides/webpack.md

@@ -79,8 +79,6 @@ export class VegaMapView extends VegaBaseView {
 
     this._kibanaMap.addLayer(vegaMapLayer);
 
-    this.setDebugValues(vegaMapLayer.getVegaView(), vegaMapLayer.getVegaSpec());
-
     this._addDestroyHandler(() => {
       this._kibanaMap.removeLayer(vegaMapLayer);
       if (baseMapOpts) {
@@ -88,6 +86,10 @@ export class VegaMapView extends VegaBaseView {
       }
       this._kibanaMap.destroy();
     });
+
+    const vegaView = vegaMapLayer.getVegaView();
+    this.setDebugValues(vegaView, vegaMapLayer.getVegaSpec());
+    await this.setView(vegaView);
   }
 
 }

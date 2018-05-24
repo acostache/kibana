@@ -107,6 +107,7 @@ module.exports = {
     'react/jsx-indent-props': ['error', 2],
     'react/jsx-max-props-per-line': ['error', { maximum: 1, when: 'multiline' }],
     'react/jsx-no-duplicate-props': ['error', { ignoreCase: true }],
+    'react/no-danger': 'error',
     'react/self-closing-comp': 'error',
     'react/jsx-wrap-multilines': ['error', {
       declaration: true,
@@ -117,8 +118,6 @@ module.exports = {
     'react/jsx-first-prop-new-line': ['error', 'multiline-multiprop'],
     'react/jsx-equals-spacing': ['error', 'never'],
     'react/jsx-indent': ['error', 2],
-    'react/no-did-mount-set-state': 'error',
-    'react/no-did-update-set-state': 'error',
     'react/no-will-update-set-state': 'error',
     'react/no-is-mounted': 'error',
     'react/no-multi-comp': ['error', { ignoreStateless: true }],

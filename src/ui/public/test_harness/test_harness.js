@@ -30,7 +30,6 @@ before(() => {
   sinon.useFakeXMLHttpRequest();
 });
 
-
 let stubUiSettings = new UiSettingsClient({
   defaults: metadata.uiSettings.defaults,
   initialSettings: {},
@@ -41,7 +40,7 @@ let stubUiSettings = new UiSettingsClient({
     }
   }
 });
-sinon.stub(chrome, 'getUiSettingsClient', () => stubUiSettings);
+sinon.stub(chrome, 'getUiSettingsClient').callsFake(() => stubUiSettings);
 
 beforeEach(function () {
   // ensure that notifications are not left in the notifiers
@@ -67,5 +66,8 @@ afterEach(function () {
 
 // Kick off mocha, called at the end of test entry files
 export function bootstrap() {
+  // load the hacks since we aren't actually bootstrapping the
+  // chrome, which is where the hacks would normally be loaded
+  require('uiExports/hacks');
   chrome.setupAngular();
 }

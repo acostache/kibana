@@ -78,7 +78,7 @@ describe('visualize loader', () => {
     // Setup savedObject
     mockedSavedObject = createSavedObject();
     // Mock savedVisualizations.get to return 'mockedSavedObject' when id is 'exists'
-    sinon.stub(savedVisualizations, 'get', (id) =>
+    sinon.stub(savedVisualizations, 'get').callsFake((id) =>
       id === 'exists' ? Promise.resolve(mockedSavedObject) : Promise.reject()
     );
   }));
@@ -251,7 +251,7 @@ describe('visualize loader', () => {
         expect(spy.notCalled).to.be(true);
         container.find('visualize').trigger('renderComplete');
         expect(spy.calledOnce).to.be(true);
-        spy.reset();
+        spy.resetHistory();
         handler.removeRenderCompleteListener(spy);
         container.find('visualize').trigger('renderComplete');
         expect(spy.notCalled).to.be(true);
@@ -267,6 +267,42 @@ describe('visualize loader', () => {
         container.find('visualize')[0].dispatchEvent(event);
         await timeout();
         expect(spy.calledOnce).to.be(true);
+      });
+
+      it('should allow updating and deleting data attributes', () => {
+        const container = newContainer();
+        const handler = loader.embedVisualizationWithSavedObject(container, createSavedObject(), {
+          dataAttrs: {
+            foo: 42
+          }
+        });
+        expect(container.find('visualize').attr('data-foo')).to.be('42');
+        handler.update({
+          dataAttrs: {
+            foo: null,
+            added: 'value',
+          }
+        });
+        // Synce we are relying on $evalAsync we need to trigger a digest loop during tests
+        $rootScope.$digest();
+        expect(container.find('visualize')[0].hasAttribute('data-foo')).to.be(false);
+        expect(container.find('visualize').attr('data-added')).to.be('value');
+      });
+
+      it('should allow updating the time range of the visualization', () => {
+        const handler = loader.embedVisualizationWithSavedObject(newContainer(), createSavedObject(), {
+          timeRange: { from: 'now-7d', to: 'now' }
+        });
+        handler.update({
+          timeRange: { from: 'now-10d/d', to: 'now' }
+        });
+        // Synce we are relying on $evalAsync we need to trigger a digest loop during tests
+        $rootScope.$digest();
+        // This is not the best test, since it tests internal structure of our scope.
+        // Unfortunately we currently don't expose the timeRange in a better way.
+        // Once we rewrite this to a react component we should spy on the timeRange
+        // property in the component to match the passed in value.
+        expect(handler._scope.timeRange).to.eql({ from: 'now-10d/d', to: 'now' });
       });
     });
 

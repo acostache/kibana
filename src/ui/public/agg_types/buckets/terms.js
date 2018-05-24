@@ -5,6 +5,7 @@ import { Schemas } from '../../vis/editors/default/schemas';
 import { createFilterTerms } from './create_filter/terms';
 import orderAggTemplate from '../controls/order_agg.html';
 import orderAndSizeTemplate from '../controls/order_and_size.html';
+import otherBucketTemplate from 'ui/agg_types/controls/other_bucket.html';
 import { buildOtherBucketAgg, mergeOtherBucketAggResponse, updateMissingBucket } from './_terms_other_bucket_helper';
 import { toastNotifications } from '../../notify';
 
@@ -72,37 +73,6 @@ export const termsBucketAgg = new BucketAggType({
       filterFieldTypes: ['number', 'boolean', 'date', 'ip',  'string']
     },
     {
-      name: 'otherBucket',
-      default: false,
-      write: _.noop
-    }, {
-      name: 'otherBucketLabel',
-      default: 'Other',
-      write: _.noop
-    }, {
-      name: 'missingBucket',
-      default: false,
-      write: _.noop
-    }, {
-      name: 'missingBucketLabel',
-      default: 'Missing',
-      write: _.noop
-    },
-    {
-      name: 'exclude',
-      type: 'string',
-      advanced: true,
-      disabled: isNotType('string'),
-      ...migrateIncludeExcludeFormat
-    },
-    {
-      name: 'include',
-      type: 'string',
-      advanced: true,
-      disabled: isNotType('string'),
-      ...migrateIncludeExcludeFormat
-    },
-    {
       name: 'size',
       default: 5
     },
@@ -162,7 +132,7 @@ export const termsBucketAgg = new BucketAggType({
           if (!orderBy && prevOrderBy === INIT) {
             let respAgg = _($scope.responseValueAggs).filter((agg) => !$scope.rejectAgg(agg)).first();
             if (!respAgg) {
-              respAgg = { id: '_term' };
+              respAgg = { id: '_key' };
             }
             params.orderBy = respAgg.id;
             return;
@@ -177,7 +147,7 @@ export const termsBucketAgg = new BucketAggType({
             // ensure that orderBy is set to a valid agg
             const respAgg = _($scope.responseValueAggs).filter((agg) => !$scope.rejectAgg(agg)).find({ id: orderBy });
             if (!respAgg) {
-              params.orderBy = '_term';
+              params.orderBy = '_key';
             }
             return;
           }
@@ -239,6 +209,38 @@ export const termsBucketAgg = new BucketAggType({
     {
       name: 'orderBy',
       write: _.noop // prevent default write, it's handled by orderAgg
-    }
+    },
+    {
+      name: 'otherBucket',
+      default: false,
+      editor: otherBucketTemplate,
+      write: _.noop
+    }, {
+      name: 'otherBucketLabel',
+      default: 'Other',
+      write: _.noop
+    }, {
+      name: 'missingBucket',
+      default: false,
+      write: _.noop
+    }, {
+      name: 'missingBucketLabel',
+      default: 'Missing',
+      write: _.noop
+    },
+    {
+      name: 'exclude',
+      type: 'string',
+      advanced: true,
+      disabled: isNotType('string'),
+      ...migrateIncludeExcludeFormat
+    },
+    {
+      name: 'include',
+      type: 'string',
+      advanced: true,
+      disabled: isNotType('string'),
+      ...migrateIncludeExcludeFormat
+    },
   ]
 });

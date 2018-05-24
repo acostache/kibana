@@ -5,49 +5,29 @@ import { map as promiseMap, fromNode } from 'bluebird';
 import { Agent as HttpsAgent } from 'https';
 import { readFileSync } from 'fs';
 
-import { Config } from '../../server/config/config';
 import { setupConnection } from '../../server/http/setup_connection';
 import { registerHapiPlugins } from '../../server/http/register_hapi_plugins';
 import { setupLogging } from '../../server/logging';
-import { transformDeprecations } from '../../server/config/transform_deprecations';
 
 const alphabet = 'abcdefghijklmnopqrztuvwxyz'.split('');
 
 export default class BasePathProxy {
-  constructor(clusterManager, userSettings) {
+  constructor(clusterManager, config) {
     this.clusterManager = clusterManager;
     this.server = new Server();
-
-    const settings = transformDeprecations(userSettings);
-    const config = Config.withDefaultSchema(settings);
 
     this.targetPort = config.get('dev.basePathProxyTarget');
     this.basePath = config.get('server.basePath');
 
     const sslEnabled = config.get('server.ssl.enabled');
     if (sslEnabled) {
-      const agentOptions = {
-        ca: map(config.get('server.ssl.certificateAuthorities'), (certAuthority) => readFileSync(certAuthority)),
+      this.proxyAgent = new HttpsAgent({
+        key: readFileSync(config.get('server.ssl.key')),
+        passphrase: config.get('server.ssl.keyPassphrase'),
+        cert: readFileSync(config.get('server.ssl.certificate')),
+        ca: map(config.get('server.ssl.certificateAuthorities'), readFileSync),
         rejectUnauthorized: false
-      };
-
-      const keystoreConfig = config.get('server.ssl.keystore.path');
-      const pemConfig = config.get('server.ssl.certificate');
-
-      if (keystoreConfig && pemConfig) {
-        throw new Error(`Invalid Configuration: please specify either "server.ssl.keystore.path" or "server.ssl.certificate", not both.`);
-      }
-
-      if (keystoreConfig) {
-        agentOptions.pfx = readFileSync(keystoreConfig);
-        agentOptions.passphrase = config.get('server.ssl.keystore.password');
-      } else {
-        agentOptions.key = readFileSync(config.get('server.ssl.key'));
-        agentOptions.cert = readFileSync(pemConfig);
-        agentOptions.passphrase = config.get('server.ssl.keyPassphrase');
-      }
-
-      this.proxyAgent = new HttpsAgent(agentOptions);
+      });
     }
 
     if (!this.basePath) {

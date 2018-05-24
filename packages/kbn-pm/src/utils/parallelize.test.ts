@@ -55,6 +55,39 @@ test('parallelizes batches', async () => {
   expect(completed).toEqual(['bar', 'foo', 'baz', 'parallelizeBatches']);
 });
 
+test('schedules at most 4 calls at the same time (concurrency)', async () => {
+  const foo = createPromiseWithResolve();
+  const bar = createPromiseWithResolve();
+  const baz = createPromiseWithResolve();
+  const quux = createPromiseWithResolve();
+  const foobar = createPromiseWithResolve();
+
+  const batches = [[foo, bar, baz, quux, foobar]];
+  const parallelize = parallelizeBatches(batches, async obj => {
+    obj.called = true;
+    await obj.promise;
+  });
+
+  expect(foo.called).toBe(true);
+  expect(bar.called).toBe(true);
+  expect(baz.called).toBe(true);
+  expect(quux.called).toBe(true);
+  expect(foobar.called).toBe(false);
+
+  foo.resolve();
+  await tick();
+
+  expect(foobar.called).toBe(true);
+
+  bar.resolve();
+  baz.resolve();
+  quux.resolve();
+  foobar.resolve();
+  await tick();
+
+  await expect(parallelize).resolves.toBe(undefined);
+});
+
 test('rejects if any promise rejects', async () => {
   const foo = createPromiseWithResolve();
   const bar = createPromiseWithResolve();
@@ -73,9 +106,9 @@ test('rejects if any promise rejects', async () => {
 function createPromiseWithResolve() {
   let resolve: (val?: any) => void;
   let reject: (err?: any) => void;
-  const promise = new Promise((_resolve, _reject) => {
-    resolve = _resolve;
-    reject = _reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
   });
   return { promise, resolve: resolve!, reject: reject!, called: false };
 }

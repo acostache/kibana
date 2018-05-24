@@ -7,7 +7,7 @@ const NoConnections = require('elasticsearch').errors.NoConnections;
 import mappings from './fixtures/mappings';
 import healthCheck from '../health_check';
 import kibanaVersion from '../kibana_version';
-import { esTestConfig } from '../../../../test_utils/es';
+import { esTestConfig } from '@kbn/test';
 import * as patchKibanaIndexNS from '../patch_kibana_index';
 
 const esPort = esTestConfig.getPort();
@@ -15,19 +15,18 @@ const esUrl = esTestConfig.getUrl();
 
 describe('plugins/elasticsearch', () => {
   describe('lib/health_check', function () {
-    this.timeout(3000);
-
     let health;
     let plugin;
     let cluster;
     let server;
-    const sandbox = sinon.sandbox.create();
+    const sandbox = sinon.createSandbox();
 
     function getTimerCount() {
       return Object.keys(sandbox.clock.timers || {}).length;
     }
 
     beforeEach(() => {
+      sandbox.useFakeTimers();
       const COMPATIBLE_VERSION_NUMBER = '5.0.0';
 
       // Stub the Kibana version instead of drawing from package.json.
@@ -90,8 +89,6 @@ describe('plugins/elasticsearch', () => {
     afterEach(() => sandbox.restore());
 
     it('should stop when cluster is shutdown', () => {
-      sandbox.useFakeTimers();
-
       // ensure that health.start() is responsible for the timer we are observing
       expect(getTimerCount()).to.be(0);
       health.start();
@@ -127,13 +124,19 @@ describe('plugins/elasticsearch', () => {
         });
     });
 
-    it('should set the cluster red if the ping fails, then to green', function () {
+    it('should set the cluster red if the ping fails, then to green', async () => {
       const ping = cluster.callWithInternalUser.withArgs('ping');
       ping.onCall(0).returns(Promise.reject(new NoConnections()));
       ping.onCall(1).returns(Promise.resolve());
 
-      return health.run()
-        .then(function () {
+      const healthRunPromise = health.run();
+
+      // Exhaust micro-task queue, to make sure that next health check is rescheduled.
+      await Promise.resolve();
+      sandbox.clock.runAll();
+
+      return healthRunPromise
+        .then(() => {
           sinon.assert.calledOnce(plugin.status.yellow);
           sinon.assert.calledWithExactly(plugin.status.yellow, 'Waiting for Elasticsearch');
 
@@ -157,7 +160,11 @@ describe('plugins/elasticsearch', () => {
           setImmediate(handler);
         });
 
-        return health.waitUntilReady().then(function () {
+        const waitUntilReadyPromise = health.waitUntilReady();
+
+        sandbox.clock.runAll();
+
+        return waitUntilReadyPromise.then(function () {
           sinon.assert.calledOnce(plugin.status.once);
         });
       });

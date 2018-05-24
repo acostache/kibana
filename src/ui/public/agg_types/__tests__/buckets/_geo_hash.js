@@ -3,9 +3,6 @@ import sinon from 'sinon';
 import { geoHashBucketAgg } from '../../buckets/geo_hash';
 import * as AggConfigModule from '../../../vis/agg_config';
 import * as BucketAggTypeModule from '../../buckets/_bucket_agg_type';
-import { aggTypes } from '../..';
-
-AggConfigModule.AggConfig.aggTypes = aggTypes;
 
 describe('Geohash Agg', () => {
 
@@ -44,8 +41,8 @@ describe('Geohash Agg', () => {
   };
 
   before(function () {
-    sinon.stub(AggConfigModule, 'AggConfig', AggConfigMock);
-    sinon.stub(BucketAggTypeModule, 'BucketAggType', BucketAggTypeMock);
+    sinon.stub(AggConfigModule, 'AggConfig').callsFake(AggConfigMock);
+    sinon.stub(BucketAggTypeModule, 'BucketAggType').callsFake(BucketAggTypeMock);
   });
 
   after(function () {

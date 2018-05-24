@@ -1,6 +1,5 @@
 import moment from 'moment';
 
-import { log } from './log';
 import { createCliError } from './errors';
 import { createProc } from './proc';
 import { observeSignals } from './observe_signals';
@@ -15,17 +14,20 @@ const noop = () => {};
  *  @class ProcRunner
  */
 export class ProcRunner {
-  constructor() {
+  constructor(options) {
+    const { log } = options;
+
     this._closing = false;
     this._procs = [];
+    this._log = log;
     this._signalSubscription = observeSignals(process).subscribe({
-      next: async (signal) => {
+      next: async signal => {
         await this.teardown(signal);
         if (signal !== 'exit') {
           // resend the signal
           process.kill(process.pid, signal);
         }
-      }
+      },
     });
   }
 
@@ -49,7 +51,7 @@ export class ProcRunner {
       cwd = process.cwd(),
       stdin = null,
       wait = false,
-      env = process.env
+      env = process.env,
     } = options;
 
     if (this._closing) {
@@ -74,7 +76,9 @@ export class ProcRunner {
           .first()
           .catch(err => {
             if (err.name !== 'EmptyError') {
-              throw createCliError(`[${name}] exitted without matching pattern: ${wait}`);
+              throw createCliError(
+                `[${name}] exited without matching pattern: ${wait}`
+              );
             } else {
               throw err;
             }
@@ -84,7 +88,7 @@ export class ProcRunner {
 
       // wait for process to complete
       if (wait === true) {
-        await proc.outcomePromise;
+        await proc.getOutcomePromise();
       }
     } finally {
       // while the procRunner closes promises will resolve/reject because
@@ -107,7 +111,7 @@ export class ProcRunner {
     if (proc) {
       await proc.stop(signal);
     } else {
-      log.warning('[%s] already stopped', name);
+      this._log.warning('[%s] already stopped', name);
     }
   }
 
@@ -116,9 +120,7 @@ export class ProcRunner {
    *  @return {Promise<undefined>}
    */
   async waitForAllToStop() {
-    await Promise.all(
-      this._procs.map(proc => proc.closedPromise)
-    );
+    await Promise.all(this._procs.map(proc => proc.getOutcomePromise()));
   }
 
   /**
@@ -136,7 +138,7 @@ export class ProcRunner {
     this._signalSubscription = null;
 
     if (!signal && this._procs.length > 0) {
-      log.warning(
+      this._log.warning(
         '%d processes left running, stop them with procs.stop(name):',
         this._procs.length,
         this._procs.map(proc => proc.name)
@@ -144,9 +146,7 @@ export class ProcRunner {
     }
 
     const stopWith = signal === 'exit' ? 'SIGKILL' : signal;
-    await Promise.all(
-      this._procs.map(proc => proc.stop(stopWith))
-    );
+    await Promise.all(this._procs.map(proc => proc.stop(stopWith)));
   }
 
   _getProc(name) {
@@ -155,7 +155,10 @@ export class ProcRunner {
 
   _createProc(name, options) {
     const startMs = Date.now();
-    const proc = createProc(name, options);
+    const proc = createProc(name, {
+      ...options,
+      log: this._log,
+    });
 
     this._procs.push(proc);
     const remove = () => {
@@ -164,16 +167,21 @@ export class ProcRunner {
 
     // tie into proc outcome$, remove from _procs on compete
     proc.outcome$.subscribe({
-      next: (code) => {
+      next: code => {
         const duration = moment.duration(Date.now() - startMs);
-        log.info('[%s] exitted with %s after %s', name, code, duration.humanize());
+        this._log.info(
+          '[%s] exited with %s after %s',
+          name,
+          code,
+          duration.humanize()
+        );
       },
       complete: () => {
         remove();
       },
-      error: (error) => {
+      error: error => {
         if (this._closing) {
-          log.error(error);
+          this._log.error(error);
         }
         remove();
       },

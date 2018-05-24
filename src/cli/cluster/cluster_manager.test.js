@@ -6,10 +6,10 @@ import ClusterManager from './cluster_manager';
 import Worker from './worker';
 
 describe('CLI cluster manager', function () {
-  const sandbox = sinon.sandbox.create();
+  const sandbox = sinon.createSandbox();
 
   beforeEach(function () {
-    sandbox.stub(cluster, 'fork', function () {
+    sandbox.stub(cluster, 'fork').callsFake(() => {
       return {
         process: {
           kill: sinon.stub(),
@@ -26,8 +26,8 @@ describe('CLI cluster manager', function () {
     sandbox.restore();
   });
 
-  it('has two workers', function () {
-    const manager = new ClusterManager({});
+  it('has two workers', async function () {
+    const manager = await ClusterManager.create({});
 
     expect(manager.workers).toHaveLength(2);
     for (const worker of manager.workers) expect(worker).toBeInstanceOf(Worker);
@@ -36,8 +36,8 @@ describe('CLI cluster manager', function () {
     expect(manager.server).toBeInstanceOf(Worker);
   });
 
-  it('delivers broadcast messages to other workers', function () {
-    const manager = new ClusterManager({});
+  it('delivers broadcast messages to other workers', async function () {
+    const manager = await ClusterManager.create({});
 
     for (const worker of manager.workers) {
       Worker.prototype.start.call(worker);// bypass the debounced start method
