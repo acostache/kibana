@@ -1,5 +1,24 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 const { resolve } = require('path');
-const { readdirSync } = require('fs');
+const { readdirSync, existsSync, unlink } = require('fs');
 const del = require('del');
 const createBuild = require('./create_build');
 
@@ -95,6 +114,33 @@ describe('creating the build', () => {
       expect(readdirSync(resolve(PLUGIN_BUILD_TARGET))).not.toContain(
         'node_modules'
       );
+    });
+  });
+
+  describe('with styleSheetToCompile', () => {
+    const sassPath = 'public/styles.scss';
+    const cssPath = resolve(PLUGIN_BUILD_TARGET, 'public/styles.css');
+
+    // set skipInstallDependencies to true for these tests
+    beforeEach(() => (PLUGIN.styleSheetToCompile = sassPath));
+    // set it back to false after
+    afterEach(() => {
+      PLUGIN.styleSheetToCompile = undefined;
+      unlink(cssPath);
+    });
+
+    it('produces CSS', async () => {
+      expect(PLUGIN.styleSheetToCompile).toBe(sassPath);
+
+      await createBuild(
+        PLUGIN,
+        buildTarget,
+        buildVersion,
+        kibanaVersion,
+        buildFiles
+      );
+
+      expect(existsSync(cssPath)).toBe(true);
     });
   });
 });

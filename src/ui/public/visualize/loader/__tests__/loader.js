@@ -1,3 +1,22 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import angular from 'angular';
 import expect from 'expect.js';
 import ngMock from 'ng_mock';
@@ -11,6 +30,7 @@ import FixturesStubbedLogstashIndexPatternProvider from 'fixtures/stubbed_logsta
 import { VisProvider } from '../../../vis';
 import { getVisualizeLoader } from '../loader';
 import { EmbeddedVisualizeHandler } from '../embedded_visualize_handler';
+import { Inspector } from '../../../inspector/inspector';
 
 describe('visualize loader', () => {
 
@@ -207,6 +227,15 @@ describe('visualize loader', () => {
         const handler = loader.embedVisualizationWithSavedObject(newContainer(), createSavedObject(), {});
         // Every jquery wrapper has a .jquery property with the version number
         expect(handler.getElement().jquery).to.be.ok();
+      });
+
+      it('should allow opening the inspector of the visualization and return its session', () => {
+        const handler = loader.embedVisualizationWithSavedObject(newContainer(), createSavedObject(), {});
+        sinon.spy(Inspector, 'open');
+        const inspectorSession = handler.openInspector();
+        expect(Inspector.open.calledOnce).to.be(true);
+        expect(inspectorSession.close).to.be.a('function');
+        inspectorSession.close();
       });
 
       it('should have whenFirstRenderComplete returns a promise resolving on first renderComplete event', async () => {

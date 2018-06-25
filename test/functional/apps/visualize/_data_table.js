@@ -1,3 +1,22 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 import expect from 'expect.js';
 
 export default function ({ getService, getPageObjects }) {
@@ -72,8 +91,8 @@ export default function ({ getService, getPageObjects }) {
           });
       });
 
-      it('should display spy panel toggle button', async function () {
-        const spyToggleExists = await PageObjects.visualize.getSpyToggleExists();
+      it('should have inspector enabled', async function () {
+        const spyToggleExists = await PageObjects.visualize.isInspectorButtonEnabled();
         expect(spyToggleExists).to.be(true);
       });
 
@@ -84,7 +103,7 @@ export default function ({ getService, getPageObjects }) {
         ];
 
         return retry.try(function () {
-          return PageObjects.visualize.getDataTableData()
+          return PageObjects.visualize.getTableVisData()
             .then(function showData(data) {
               log.debug(data.split('\n'));
               expect(data.split('\n')).to.eql(expectedChartData);
@@ -103,7 +122,7 @@ export default function ({ getService, getPageObjects }) {
         await PageObjects.visualize.setInterval('Daily');
         await PageObjects.visualize.clickGo();
         await PageObjects.header.waitUntilLoadingHasFinished();
-        const data = await PageObjects.visualize.getDataTableData();
+        const data = await PageObjects.visualize.getTableVisData();
         expect(data.trim().split('\n')).to.be.eql([
           '2015-09-20', '4,757',
           '2015-09-21', '4,614',
@@ -114,7 +133,7 @@ export default function ({ getService, getPageObjects }) {
       it('should correctly filter for applied time filter on the main timefield', async () => {
         await filterBar.addFilter('@timestamp', 'is between', ['2015-09-19', '2015-09-21']);
         await PageObjects.header.waitUntilLoadingHasFinished();
-        const data = await PageObjects.visualize.getDataTableData();
+        const data = await PageObjects.visualize.getTableVisData();
         expect(data.trim().split('\n')).to.be.eql([
           '2015-09-20', '4,757',
         ]);

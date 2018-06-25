@@ -1,3 +1,22 @@
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 async function findDashboardRelationships(id, size, savedObjectsClient) {
   const dashboard = await savedObjectsClient.get('dashboard', id);
   const visualizations = [];
@@ -6,29 +25,34 @@ async function findDashboardRelationships(id, size, savedObjectsClient) {
   const panelsJSON = JSON.parse(dashboard.attributes.panelsJSON);
   if (panelsJSON) {
     const visualizationIds = panelsJSON.map(panel => panel.id);
-    const visualizationResponse = await savedObjectsClient.bulkGet(visualizationIds.slice(0, size).map(id => ({
-      id,
-      type: 'visualization',
-    })));
+    const visualizationResponse = await savedObjectsClient.bulkGet(
+      visualizationIds.slice(0, size).map(id => ({
+        id,
+        type: 'visualization',
+      }))
+    );
 
-    visualizations.push(...visualizationResponse.saved_objects.reduce((accum, object) => {
-      if (!object.error) {
-        accum.push({
-          id: object.id,
-          title: object.attributes.title,
-        });
-      }
-      return accum;
-    }, []));
+    visualizations.push(
+      ...visualizationResponse.saved_objects.reduce((accum, object) => {
+        if (!object.error) {
+          accum.push({
+            id: object.id,
+            title: object.attributes.title,
+          });
+        }
+        return accum;
+      }, [])
+    );
   }
 
   return { visualizations };
 }
 
 async function findVisualizationRelationships(id, size, savedObjectsClient) {
+  await savedObjectsClient.get('visualization', id);
   const allDashboardsResponse = await savedObjectsClient.find({
     type: 'dashboard',
-    fields: ['title', 'panelsJSON']
+    fields: ['title', 'panelsJSON'],
   });
 
   const dashboards = [];
@@ -52,7 +76,6 @@ async function findVisualizationRelationships(id, size, savedObjectsClient) {
       break;
     }
   }
-
   return { dashboards };
 }
 
@@ -73,7 +96,7 @@ async function findSavedSearchRelationships(id, size, savedObjectsClient) {
     type: 'visualization',
     searchFields: ['savedSearchId'],
     search: id,
-    fields: ['title']
+    fields: ['title'],
   });
 
   const visualizations = allVisualizationsResponse.saved_objects.reduce((accum, object) => {
@@ -90,6 +113,7 @@ async function findSavedSearchRelationships(id, size, savedObjectsClient) {
 }
 
 async function findIndexPatternRelationships(id, size, savedObjectsClient) {
+  await savedObjectsClient.get('index-pattern', id);
   const [allVisualizationsResponse, savedSearchResponse] = await Promise.all([
     savedObjectsClient.find({
       type: 'visualization',
@@ -140,7 +164,6 @@ async function findIndexPatternRelationships(id, size, savedObjectsClient) {
       break;
     }
   }
-
   return { visualizations, searches };
 }
 

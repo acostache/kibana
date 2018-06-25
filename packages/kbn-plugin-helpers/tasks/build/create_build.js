@@ -1,7 +1,27 @@
-const join = require('path').join;
+/*
+ * Licensed to Elasticsearch B.V. under one or more contributor
+ * license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright
+ * ownership. Elasticsearch B.V. licenses this file to you under
+ * the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+const path = require('path');
 const relative = require('path').relative;
 const { readFileSync, writeFileSync, unlinkSync, existsSync } = require('fs');
-const execFileSync = require('child_process').execFileSync;
+const execa = require('execa');
+const sass = require('node-sass');
 const del = require('del');
 const vfs = require('vinyl-fs');
 const rename = require('gulp-rename');
@@ -15,7 +35,7 @@ const winCmd = require('../../lib/win_cmd');
 // in the built zip file. Therefore we remove all symlinked dependencies, so we
 // can re-create them when installing the plugin.
 function removeSymlinkDependencies(root) {
-  const nodeModulesPattern = join(root, '**', 'node_modules', '**');
+  const nodeModulesPattern = path.join(root, '**', 'node_modules', '**');
 
   return through.obj((file, enc, cb) => {
     const isSymlink = file.symlink != null;
@@ -31,7 +51,7 @@ function removeSymlinkDependencies(root) {
 
 // parse a ts config file
 function parseTsconfig(pluginSourcePath, configPath) {
-  const ts = require(join(pluginSourcePath, 'node_modules', 'typescript'));
+  const ts = require(path.join(pluginSourcePath, 'node_modules', 'typescript'));
 
   const { error, config } = ts.parseConfigFileTextToJson(
     configPath,
@@ -53,24 +73,28 @@ module.exports = function createBuild(
   files
 ) {
   const buildSource = plugin.root;
-  const buildRoot = join(buildTarget, 'kibana', plugin.id);
+  const buildRoot = path.join(buildTarget, 'kibana', plugin.id);
 
   return del(buildTarget)
     .then(function() {
       return new Promise(function(resolve, reject) {
         vfs
-          .src(files, { cwd: buildSource, base: buildSource, allowEmpty: true })
+          .src(files, {
+            cwd: buildSource,
+            base: buildSource,
+            allowEmpty: true,
+          })
           // modify the package.json file
           .pipe(rewritePackageJson(buildSource, buildVersion, kibanaVersion))
 
           // put all files inside the correct directories
           .pipe(
-            rename(function nestFileInDir(path) {
-              const nonRelativeDirname = path.dirname.replace(
+            rename(function nestFileInDir(filePath) {
+              const nonRelativeDirname = filePath.dirname.replace(
                 /^(\.\.\/?)+/g,
                 ''
               );
-              path.dirname = join(
+              filePath.dirname = path.join(
                 relative(buildTarget, buildRoot),
                 nonRelativeDirname
               );
@@ -88,19 +112,40 @@ module.exports = function createBuild(
       }
 
       // install packages in build
-      const options = {
-        cwd: buildRoot,
-        stdio: ['ignore', 'ignore', 'pipe'],
-      };
-
-      execFileSync(
+      execa.sync(
         winCmd('yarn'),
         ['install', '--production', '--pure-lockfile'],
-        options
+        {
+          cwd: buildRoot,
+        }
       );
     })
     .then(function() {
-      const buildConfigPath = join(buildRoot, 'tsconfig.json');
+      if (!plugin.styleSheetToCompile) {
+        return;
+      }
+
+      const file = path.resolve(plugin.root, plugin.styleSheetToCompile);
+      if (!existsSync(file)) {
+        throw new Error(
+          `Path provided for styleSheetToCompile does not exist: ${file}`
+        );
+      }
+
+      const outputFileName = path.basename(file, path.extname(file)) + '.css';
+      const output = path.join(
+        buildRoot,
+        path.dirname(plugin.styleSheetToCompile),
+        outputFileName
+      );
+
+      const rendered = sass.renderSync({ file, output });
+      writeFileSync(output, rendered.css);
+
+      del.sync([path.join(buildRoot, '**', '*.s{a,c}ss')]);
+    })
+    .then(function() {
+      const buildConfigPath = path.join(buildRoot, 'tsconfig.json');
 
       if (!existsSync(buildConfigPath)) {
         return;
@@ -116,7 +161,7 @@ module.exports = function createBuild(
       const buildConfig = parseTsconfig(buildSource, buildConfigPath);
 
       if (buildConfig.extends) {
-        buildConfig.extends = join(
+        buildConfig.extends = path.join(
           relative(buildRoot, buildSource),
           buildConfig.extends
         );
@@ -124,18 +169,15 @@ module.exports = function createBuild(
         writeFileSync(buildConfigPath, JSON.stringify(buildConfig));
       }
 
-      execFileSync(
-        join(buildSource, 'node_modules', '.bin', 'tsc'),
+      execa.sync(
+        path.join(buildSource, 'node_modules', '.bin', winCmd('tsc')),
         ['--pretty', 'true'],
-        {
-          cwd: buildRoot,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        }
+        { cwd: buildRoot }
       );
 
       del.sync([
-        join(buildRoot, '**', '*.{ts,tsx,d.ts}'),
-        join(buildRoot, 'tsconfig.json'),
+        path.join(buildRoot, '**', '*.{ts,tsx,d.ts}'),
+        path.join(buildRoot, 'tsconfig.json'),
       ]);
     })
     .then(function() {
