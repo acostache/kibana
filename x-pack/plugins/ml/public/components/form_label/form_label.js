@@ -14,7 +14,7 @@ const module = uiModules.get('apps/ml');
 // text elements get unique ids based on label-id so they can be
 // referenced by attributes, for example:
 //
-// <ml-form-label label-id="uid">Label Text</ml-form-lable>
+// <ml-form-label label-id="uid">Label Text</ml-form-label>
 // <input
 //   type="text"
 //   aria-labelledby="ml_aria_label_uid"
@@ -31,7 +31,7 @@ module.directive('mlFormLabel', function () {
     transclude: true,
     template: `
       <label class="kuiFormLabel" id="ml_aria_label_{{labelId}}" ng-transclude></label>
-      <i ml-info-icon="{{labelId}}" position="bottom" />
+      <i ml-info-icon="{{labelId}}" position="top" />
     `
   };
 });
